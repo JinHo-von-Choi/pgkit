@@ -1,0 +1,67 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: PGSetupTool-windows.exe
+            build_output: dist/PGSetupTool.exe
+          - os: macos-latest
+            artifact: PGSetupTool-macos
+            build_output: dist/PGSetupTool
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary pyinstaller
+
+      - name: Build
+        run: python -m PyInstaller build.spec --clean --noconfirm
+
+      - name: Rename artifact
+        shell: bash
+        run: mv "${{ matrix.build_output }}" "dist/${{ matrix.artifact }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release tag
+        id: tag
+        run: echo "tag=v$(date +'%Y%m%d')-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            artifacts/PGSetupTool-windows.exe
+            artifacts/PGSetupTool-macos
